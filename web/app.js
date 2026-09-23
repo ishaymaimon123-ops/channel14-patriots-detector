@@ -125,7 +125,7 @@ async function poll(restoring=false) {
     const job=await response.json();
     setProgress(job.stage||'מנתח',job.progress||0);
     if(job.status==='done'){
-      renderResult(job.result,state.jobId);
+      renderResult(job.result);
       $('analyseButton').disabled=!state.file;
       $('demoButton').disabled=false;
       $('analyseLinkButton').disabled=false;
@@ -150,11 +150,11 @@ async function poll(restoring=false) {
   }
 }
 
-function renderResult(result,id) {
+function renderResult(result) {
   const breaks=result.breaks||[];
   $('adPlayer').pause();
   $('adPlayer').removeAttribute('src');
-  $('viewerPanel').hidden=true;
+  $('adPlayer').load();
   const ads=breaks.reduce((sum,b)=>sum+(b.ads||[]).length,0);
   $('durationStat').textContent=fmt(result.duration);
   $('breakStat').textContent=breaks.length;
@@ -166,33 +166,20 @@ function renderResult(result,id) {
       `נותח קטע באורך ${fmt(result.duration)} מתחילת הקישור (${result.source_duration?`האורך הכולל ${fmt(result.source_duration)}`:'שידור חי'}). אפשר לבחור ״כל הקישור״ לניתוח מלא.`;
   } else $('sourceNote').hidden=true;
   $('allAdsDownload').hidden=!result.all_ads_url;
-  if(result.all_ads_url) $('allAdsDownload').href=result.all_ads_url;
+  $('viewerPanel').hidden=!result.all_ads_url;
+  if(result.all_ads_url) {
+    $('allAdsDownload').href=result.all_ads_url+'?download=1';
+    $('adPlayer').src=result.all_ads_url;
+  }
   $('timelineEnd').textContent=fmt(result.duration);
   $('timeline').innerHTML=breaks.map(b=>{
     const left=Math.max(0,100*b.start/result.duration);
     const width=Math.max(.4,100*(b.end-b.start)/result.duration);
     return `<div class="segment" style="right:${left}%;width:${width}%" title="${fmt(b.start)}–${fmt(b.end)}"></div>`;
   }).join('');
-  $('breakCards').innerHTML=breaks.length ? breaks.map((b,i)=>{
-    const breakActions=b.clip_url ? `<div class="clip-actions"><button class="watch-button" data-watch="${escapeHtml(b.clip_url)}" data-title="הפסקה ${i+1} בשלמותה">צפה בהפסקה המלאה ▶</button><a class="download-link" href="${escapeHtml(b.clip_url)}?download=1">הורד את ההפסקה כ־MP4 ↓</a></div>` : '';
-    const adCards=(b.ads||[]).map((ad,j)=>`<article class="ad-card"><div class="ad-card-heading"><strong>פרסומת ${j+1}</strong><bdi dir="ltr">${fmt(ad.start)}–${fmt(ad.end)}</bdi></div>${ad.clip_url?`<button class="watch-button" data-watch="${escapeHtml(ad.clip_url)}" data-title="פרסומת ${j+1} · הפסקה ${i+1}">צפה בפרסומת ▶</button><a class="download-link" href="${escapeHtml(ad.clip_url)}?download=1">הורד MP4 ↓</a>`:''}</article>`).join('');
-    return `<div class="break-card"><div class="break-title"><strong>הפסקה ${i+1} · <bdi dir="ltr">${fmt(b.start)}–${fmt(b.end)}</bdi></strong><span>${(b.ads||[]).length} פרסומות מוצעות</span></div><p class="break-help">הצפייה בהפסקה השלמה כוללת את כל הפרסומות, גם אם החלוקה לפרסומות בודדות דורשת תיקון.</p>${breakActions}<div class="ad-list">${adCards}</div></div>`;
-  }).join('') : '<div class="no-breaks">לא זוהתה הפסקת פרסומות בסרטון הזה. אפשר לפתוח את מצב ניפוי השגיאות ולבדוק את ציוני התמונות שנדגמו.</div>';
-  $('debugLink').href=`/jobs/${id}/debug.html`;
   $('resultPanel').hidden=false;
   $('resultPanel').scrollIntoView({behavior:'smooth',block:'start'});
 }
-
-$('breakCards').addEventListener('click',event=>{
-  const button=event.target.closest('[data-watch]');
-  if(!button) return;
-  $('adPlayer').pause();
-  $('adPlayer').src=button.dataset.watch;
-  $('viewerTitle').textContent=button.dataset.title;
-  $('viewerDownload').href=button.dataset.watch+'?download=1';
-  $('viewerPanel').hidden=false;
-  $('viewerPanel').scrollIntoView({behavior:'smooth',block:'center'});
-});
 
 $('dropzone').addEventListener('click',()=>$('fileInput').click());
 $('dropzone').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();$('fileInput').click()}});

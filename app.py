@@ -16,7 +16,6 @@ import subprocess
 import threading
 import traceback
 import uuid
-import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
@@ -32,7 +31,7 @@ UPLOADS = WORK / "uploads"
 RUNS = WORK / "runs"
 ARCHIVE_CACHE = WORK / "archive_cache"
 RESULT_CACHE = WORK / "result_cache"
-ANALYSIS_VERSION = 2
+ANALYSIS_VERSION = 3
 DEMO = ROOT / "assets/demo/patriots_demo.mp4"
 PORT = int(os.environ.get("PATRIOTS_PORT", "8765"))
 HOST = os.environ.get("PATRIOTS_HOST", "127.0.0.1")
@@ -111,41 +110,63 @@ def remember_result(url: str, mode: str, job_id: str) -> None:
     os.replace(temporary, path)
 
 
-def render_clip(source: Path, start: float, end: float, destination: Path) -> None:
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    duration = max(0.05, end - start)
-    command = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
-               "-ss", str(max(0, start)), "-i", str(source), "-t", str(duration),
-               "-map", "0:v:0", "-map", "0:a?", "-c:v", "libx264", "-preset", "ultrafast",
-               "-crf", "24", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k",
-               "-movflags", "+faststart", str(destination)]
-    proc = subprocess.run(command, capture_output=True, text=True)
-    if proc.returncode or not destination.is_file() or destination.stat().st_size < 1024:
-        destination.unlink(missing_ok=True)
-        raise RuntimeError("ייצוא הווידאו נכשל: " + proc.stderr[-400:])
-
-
-def export_clips(job_id: str, source: Path, breaks: list[dict], base: float) -> str | None:
-    output = RUNS / job_id / "clips"
-    count = sum(1 + len(item.get("ads", [])) for item in breaks)
-    done = 0
-    for break_index, item in enumerate(breaks, 1):
-        entries = [(f"break_{break_index:03d}.mp4", item)]
-        entries += [(f"ad_{break_index:03d}_{ad_index:03d}.mp4", ad)
-                    for ad_index, ad in enumerate(item.get("ads", []), 1)]
-        for filename, segment in entries:
-            set_job(job_id, stage=f"מייצא קטעי וידאו · {done + 1} מתוך {count}",
-                    progress=round(base + (1-base) * done / max(count, 1), 3))
-            render_clip(source, float(segment["start"]), float(segment["end"]), output / filename)
-            segment["clip_url"] = f"/api/jobs/{job_id}/clips/{filename}"
-            done += 1
-    ads = sorted(output.glob("ad_*.mp4"))
+def export_all_ads(job_id: str, source: Path, breaks: list[dict], base: float) -> str | None:
+    """Join all detected ad ranges into one accurate MP4 with one encode pass."""
+    ads = sorted((ad for item in breaks for ad in item.get("ads", [])),
+                 key=lambda ad: float(ad["start"]))
     if not ads:
         return None
-    with zipfile.ZipFile(output / "all_ads.zip", "w", compression=zipfile.ZIP_STORED) as archive:
-        for clip in ads:
-            archive.write(clip, clip.name)
-    return f"/api/jobs/{job_id}/all_ads.zip"
+
+    output_dir = RUNS / job_id / "clips"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    destination = output_dir / "all_ads.mp4"
+    durations = [max(0.05, float(ad["end"]) - float(ad["start"])) for ad in ads]
+    total_duration = sum(durations)
+
+    audio_check = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=index",
+         "-of", "csv=p=0", str(source)], capture_output=True, text=True)
+    has_audio = audio_check.returncode == 0 and bool(audio_check.stdout.strip())
+
+    command = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+               "-stats_period", "2", "-progress", "pipe:1", "-nostats"]
+    for ad, duration in zip(ads, durations):
+        command += ["-ss", str(max(0, float(ad["start"]))), "-t", str(duration), "-i", str(source)]
+
+    filters: list[str] = []
+    concat_inputs: list[str] = []
+    for index in range(len(ads)):
+        filters.append(f"[{index}:v:0]setpts=PTS-STARTPTS[v{index}]")
+        concat_inputs.append(f"[v{index}]")
+        if has_audio:
+            filters.append(f"[{index}:a:0]asetpts=PTS-STARTPTS[a{index}]")
+            concat_inputs.append(f"[a{index}]")
+    concat_filter = f"{''.join(concat_inputs)}concat=n={len(ads)}:v=1:a={1 if has_audio else 0}[vout]"
+    command += ["-filter_complex", ";".join(filters), "-map", "[vout]"]
+    if has_audio:
+        concat_filter += "[aout]"
+        command += ["-map", "[aout]", "-c:a", "aac", "-b:a", "128k"]
+    command[command.index("-filter_complex") + 1] = ";".join([*filters, concat_filter])
+    command += ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "24", "-threads", "1",
+                "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(destination)]
+
+    set_job(job_id, stage="מחבר את כל הפרסומות לסרטון אחד", progress=base)
+    with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                          text=True, bufsize=1) as process:
+        assert process.stdout is not None
+        for line in process.stdout:
+            if line.startswith("out_time="):
+                match = re.match(r"out_time=(\d+):(\d+):(\d+(?:\.\d+)?)", line)
+                if match:
+                    position = int(match[1])*3600 + int(match[2])*60 + float(match[3])
+                    progress = base + .19 * min(position / max(total_duration, 1), 1)
+                    set_job(job_id, progress=round(progress, 3))
+        stderr = process.stderr.read() if process.stderr else ""
+        code = process.wait()
+    if code or not destination.is_file() or destination.stat().st_size < 1024:
+        destination.unlink(missing_ok=True)
+        raise RuntimeError("חיבור הפרסומות נכשל: " + stderr[-500:])
+    return f"/api/jobs/{job_id}/all_ads.mp4"
 
 
 def run_job(job_id: str, video: Path) -> None:
@@ -159,8 +180,8 @@ def run_job(job_id: str, video: Path) -> None:
             video = saved
         def progress(stage: str, fraction: float) -> None:
             set_job(job_id, stage=stage, progress=round(.02 + .78 * fraction, 3))
-        result = analyse_video(str(video), output, load_config(), True, True, progress)
-        all_ads_url = export_clips(job_id, video, result["breaks"], .80)
+        result = analyse_video(str(video), output, load_config(), True, False, progress)
+        all_ads_url = export_all_ads(job_id, video, result["breaks"], .80)
         set_job(job_id, status="done", stage="הניתוח הושלם", progress=1.0,
                 result={"duration": result["duration"], "breaks": result["breaks"],
                         "sample_count": len(result["frames"]), "all_ads_url": all_ads_url})
@@ -252,8 +273,8 @@ def run_url_job(job_id: str, url: str, mode: str) -> None:
         output = RUNS / job_id
         def progress(stage: str, fraction: float) -> None:
             set_job(job_id, stage=stage, progress=round(.28 + .52*fraction, 3))
-        result = analyse_video(str(video), output, load_config(), True, True, progress)
-        all_ads_url = export_clips(job_id, video, result["breaks"], .80)
+        result = analyse_video(str(video), output, load_config(), True, False, progress)
+        all_ads_url = export_all_ads(job_id, video, result["breaks"], .80)
         set_job(job_id, status="done", stage="הניתוח הושלם", progress=1.0,
                 result={"duration": result["duration"], "breaks": result["breaks"],
                         "sample_count": len(result["frames"]), "source_duration": source_duration,
@@ -369,15 +390,10 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self.send_json(job)
             return
-        clip_match = re.fullmatch(r"/api/jobs/([0-9a-f]{32})/clips/((?:break_\d{3}|ad_\d{3}_\d{3})\.mp4)", path)
-        if clip_match:
-            self.send_video_file(RUNS / clip_match[1] / "clips" / clip_match[2],
+        ads_match = re.fullmatch(r"/api/jobs/([0-9a-f]{32})/all_ads\.mp4", path)
+        if ads_match:
+            self.send_video_file(RUNS / ads_match[1] / "clips" / "all_ads.mp4",
                                  download="download=1" in urlsplit(self.path).query)
-            return
-        archive_match = re.fullmatch(r"/api/jobs/([0-9a-f]{32})/all_ads\.zip", path)
-        if archive_match:
-            self.send_video_file(RUNS / archive_match[1] / "clips" / "all_ads.zip",
-                                 download=True, content_type="application/zip")
             return
         file_match = re.fullmatch(r"/jobs/([0-9a-f]{32})/(.+)", path)
         if file_match:
