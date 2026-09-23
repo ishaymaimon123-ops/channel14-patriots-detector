@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1220">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231858ce'/%3E%3Ctext x='32' y='44' text-anchor='middle' font-family='Arial' font-size='37' font-weight='bold' fill='white'%3E14%3C/text%3E%3C/svg%3E">
+  <title>זיהוי פרסומות · הפטריוטים</title>
+  <link rel="stylesheet" href="/style.css">
+  <script defer src="/app.js"></script>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark">14</span><div><strong>הפטריוטים</strong><small>זיהוי פרסומות בווידאו</small></div></div>
+      <div class="status" id="serverStatus"><span class="status-dot"></span> בודק את המערכת</div>
+    </header>
+
+    <main>
+      <section class="intro">
+        <div class="eyebrow">CHANNEL 14 / PATRIOTS DETECTOR</div>
+        <h1>מוצאים את הפסקות הפרסומות. <em>ואת המודעות שבתוכן.</em></h1>
+        <p>מדביקים קישור וידאו או מעלים הקלטה של ״הפטריוטים״. המערכת מזהה את הפסקות הפרסומות ומציגה את הסרטונים לצפייה ישירה ולהורדה.</p>
+      </section>
+
+      <div class="workspace">
+        <section class="panel upload-panel" aria-labelledby="uploadTitle">
+          <div class="section-heading"><div><span class="step">01</span><h2 id="uploadTitle">בדיקת סרטון</h2></div><span class="local-pill">העיבוד מתבצע במחשב הזה</span></div>
+          <div class="link-box">
+            <label for="videoUrl">קישור וידאו ישיר או HLS</label>
+            <input id="videoUrl" type="url" spellcheck="false" dir="ltr" value="https://n-121-11.il.cdn-redge.media/livehls/oil/ch14/live/now14/live.livx/playlist.m3u8?renditions&amp;startTime=811792800000&amp;stopTime=811798200000" aria-describedby="linkHint">
+            <div class="link-actions">
+              <select id="linkMode" aria-label="משך הניתוח מהקישור">
+                <option value="180">3 דקות ראשונות — בדיקה מהירה</option>
+                <option value="900">15 דקות ראשונות</option>
+                <option value="full" selected>כל הקישור — עד שעתיים</option>
+              </select>
+              <button id="analyseLinkButton" class="link-button">נתח קישור</button>
+            </div>
+            <label class="rescan-option"><input id="forceLinkScan" type="checkbox"> סרוק מחדש גם אם קיימת תוצאה שמורה</label>
+            <p id="linkHint">הקישור שסיפקת כבר הוזן. תוצאה שמורה נפתחת מיד; סריקה חדשה בודקת מחדש את כל ההקלטה.</p>
+          </div>
+          <div class="divider">או העלה קובץ מהמחשב</div>
+          <div class="dropzone" id="dropzone" role="button" tabindex="0" aria-label="בחירת קובץ וידאו">
+            <div class="upload-icon">↑</div>
+            <strong>גרור לכאן סרטון, או לחץ לבחירת קובץ</strong>
+            <span>MP4 · MOV · MKV · WEBM · TS · עד 3GB</span>
+            <input id="fileInput" type="file" accept=".mp4,.mov,.mkv,.webm,.m4v,.ts,video/*" hidden>
+          </div>
+          <div class="file-row" id="fileRow" hidden><span id="fileName"></span><span id="fileSize"></span></div>
+          <button id="analyseButton" class="primary" disabled>התחל ניתוח</button>
+          <button id="demoButton" class="secondary">או נסה סרטון הדגמה עכשיו <span>←</span></button>
+          <p class="demo-note">הדגמה סינתטית באורך 16 שניות, המבוססת על צילום הייחוס. היא כוללת שתי פרסומות מדומות ואז קטע תוכנית.</p>
+          <div id="progressPanel" class="progress-panel" hidden>
+            <div class="progress-line"><strong id="progressStage">מכין ניתוח</strong><span id="progressPercent">0%</span></div>
+            <div class="progress-track"><div id="progressFill"></div></div>
+          </div>
+          <p class="error" id="errorMessage" role="alert" hidden></p>
+        </section>
+
+        <section class="panel reference-panel" aria-labelledby="referenceTitle">
+          <div class="section-heading"><div><span class="step">✓</span><h2 id="referenceTitle">בדיקת צילום הייחוס</h2></div><span class="verified">כיול פעיל</span></div>
+          <img class="reference-image" src="/reference.png" alt="צילום הייחוס המציג את הגרפיקה הכחולה משמאל ואת הסמל הלבן מימין">
+          <div class="reference-summary"><div><small>סיווג</small><strong id="referenceClass">בודק…</strong></div><div><small>רמת ביטחון</small><strong id="referenceConfidence">—</strong></div></div>
+          <div class="score-row"><span>גרפיקת ההפסקה הכחולה</span><strong id="leftScore">—</strong></div>
+          <div class="score-row"><span>סמל הפרסומות הלבן</span><strong id="rightScore">—</strong></div>
+          <div class="score-row"><span>OCR · הפטריוטים</span><strong id="patriotsScore">—</strong></div>
+          <div class="score-row"><span>טיימר</span><strong id="timerValue">—</strong></div>
+          <div class="score-row"><span>OCR · מיד נשוב</span><strong id="returnScore">—</strong></div>
+          <p class="hint">זו תמונת כיול אחת. בדיקת סרטון שלם מצריכה כמה דגימות רצופות לפני קביעת תחילת הפסקה.</p>
+        </section>
+      </div>
+
+      <section class="panel result-panel" id="resultPanel" hidden aria-labelledby="resultTitle">
+        <div class="section-heading"><div><span class="step">02</span><h2 id="resultTitle">תוצאות הניתוח</h2></div><a id="debugLink" class="text-link">פתח מצב ניפוי שגיאות ↗</a></div>
+        <div class="result-stats"><div><small>אורך הסרטון</small><strong id="durationStat">—</strong></div><div><small>הפסקות פרסומות</small><strong id="breakStat">—</strong></div><div><small>פרסומות מוצעות</small><strong id="adStat">—</strong></div><div><small>תמונות שנבדקו</small><strong id="frameStat">—</strong></div></div>
+        <p id="sourceNote" class="source-note" hidden></p>
+        <a id="allAdsDownload" class="download-all" hidden>הורד את כל הפרסומות כקובץ ZIP ↓</a>
+        <div id="viewerPanel" class="viewer-panel" hidden>
+          <div class="viewer-heading"><h3 id="viewerTitle">צפייה בפרסומת</h3><a id="viewerDownload" class="download-link">הורד את הסרטון כ־MP4 ↓</a></div>
+          <video id="adPlayer" controls playsinline preload="none"></video>
+        </div>
+        <div class="timeline-wrap"><div class="timeline-label"><strong>ציר זמן</strong><span><i></i> הפסקת פרסומות</span></div><div class="timeline" id="timeline"></div><div class="timeline-scale"><span>00:00</span><span id="timelineEnd">—</span></div></div>
+        <div id="breakCards" class="break-cards"></div>
+      </section>
+    </main>
+
+    <footer>שלב 1 מזהה את ההפסקה לפי שתי גרפיקות הפינה. שלב 2 מציע גבולות בין מודעות מתוך שינויי תמונה, פריימים שחורים ומעברי קול.</footer>
+  </div>
+</body>
+</html>

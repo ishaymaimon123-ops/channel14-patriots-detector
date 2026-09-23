@@ -1,0 +1,4 @@
+numpy>=1.26
+Pillow>=10.0
+# Video analysis also needs ffmpeg and ffprobe on PATH.
+# Optional OCR: install Tesseract OCR and Hebrew language data.
