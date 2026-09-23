@@ -25,7 +25,7 @@
 
       <div class="workspace">
         <section class="panel upload-panel" aria-labelledby="uploadTitle">
-          <div class="section-heading"><div><span class="step">01</span><h2 id="uploadTitle">בדיקת סרטון</h2></div><span class="local-pill">העיבוד מתבצע במחשב הזה</span></div>
+          <div class="section-heading"><div><span class="step">01</span><h2 id="uploadTitle">בדיקת סרטון</h2></div><span class="local-pill">העיבוד מתבצע בשרת בענן</span></div>
           <div class="link-box">
             <label for="videoUrl">קישור וידאו ישיר או HLS</label>
             <input id="videoUrl" type="url" spellcheck="false" dir="ltr" value="https://n-121-11.il.cdn-redge.media/livehls/oil/ch14/live/now14/live.livx/playlist.m3u8?renditions&amp;startTime=811792800000&amp;stopTime=811798200000" aria-describedby="linkHint">
@@ -38,13 +38,13 @@
               <button id="analyseLinkButton" class="link-button">נתח קישור</button>
             </div>
             <label class="rescan-option"><input id="forceLinkScan" type="checkbox"> סרוק מחדש גם אם קיימת תוצאה שמורה</label>
-            <p id="linkHint">הקישור שסיפקת כבר הוזן. תוצאה שמורה נפתחת מיד; סריקה חדשה בודקת מחדש את כל ההקלטה.</p>
+            <p id="linkHint">הקישור שסיפקת כבר הוזן. תוצאה שמורה נפתחת מיד; סריקה חדשה בודקת מחדש את כל ההקלטה. יש להוריד תוצאות חשובות בסיום, כי אחסון חינמי בענן עשוי להימחק בהפעלה מחדש.</p>
           </div>
           <div class="divider">או העלה קובץ מהמחשב</div>
           <div class="dropzone" id="dropzone" role="button" tabindex="0" aria-label="בחירת קובץ וידאו">
             <div class="upload-icon">↑</div>
             <strong>גרור לכאן סרטון, או לחץ לבחירת קובץ</strong>
-            <span>MP4 · MOV · MKV · WEBM · TS · עד 3GB</span>
+            <span>MP4 · MOV · MKV · WEBM · TS · לקבצים גדולים מומלץ להדביק קישור</span>
             <input id="fileInput" type="file" accept=".mp4,.mov,.mkv,.webm,.m4v,.ts,video/*" hidden>
           </div>
           <div class="file-row" id="fileRow" hidden><span id="fileName"></span><span id="fileSize"></span></div>
