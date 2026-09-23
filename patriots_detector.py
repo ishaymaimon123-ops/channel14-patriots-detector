@@ -205,10 +205,21 @@ class VisualDetector:
         timer = f"{int(match[1]):02d}:{int(match[2]):02d}" if match else None
         return " | ".join(v for v in lines.values() if v), clamp(patriot), clamp(soon), 1.0 if timer else 0.0, timer
 
-    def score_frame(self, image: Image.Image, timestamp: float = 0.0, *, do_ocr: bool = True) -> FrameResult:
+    def _fixed_crop(self, image: Image.Image, key: str) -> Image.Image:
+        w, h = image.size
+        x1, y1, x2, y2 = self.config[key]
+        return image.crop((round(x1*w), round(y1*h), round(x2*w), round(y2*h)))
+
+    def score_frame(self, image: Image.Image, timestamp: float = 0.0, *,
+                    do_ocr: bool = True, search: bool = True) -> FrameResult:
         image = image.convert("RGB")
-        left, left_crop = self._search(image, "left_box", self._left_score)
-        right, _ = self._search(image, "right_marker", self._right_score)
+        if search:
+            left, left_crop = self._search(image, "left_box", self._left_score)
+            right, _ = self._search(image, "right_marker", self._right_score)
+        else:
+            left_crop = self._fixed_crop(image, "left_box")
+            left = self._left_score(left_crop)
+            right = self._right_score(self._fixed_crop(image, "right_marker"))
         # Video analysis schedules OCR periodically. Visual matches are checked
         # on every sampled frame, while OCR remains supporting evidence.
         ocr_text, patriot, soon, timer_score, timer = self._ocr(left_crop) if left > 0.32 and do_ocr else ("", 0., 0., 0., None)
@@ -372,15 +383,22 @@ def ffprobe_duration(video: str) -> float:
     return int(match[1]) * 3600 + int(match[2]) * 60 + float(match[3])
 
 
-def extract_frames(video: str, out: Path, fps: float, start: float = 0, end: float | None = None) -> list[tuple[float, Path]]:
+def extract_frames(video: str, out: Path, fps: float, start: float = 0,
+                   end: float | None = None, *, coarse: bool = False) -> list[tuple[float, Path]]:
     out.mkdir(parents=True, exist_ok=True)
     cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error"]
     if start:
         cmd += ["-ss", str(start)]
+    if coarse:
+        # The first pass only locates likely breaks. HLS keyframes retain the
+        # corner overlays while avoiding a full decode of every source frame.
+        cmd += ["-skip_frame", "nokey"]
     cmd += ["-i", video]
     if end is not None:
         cmd += ["-t", str(max(0, end - start))]
-    cmd += ["-vf", f"fps={fps:.8f}", "-q:v", "3", "-start_number", "0", str(out / "%06d.jpg")]
+    filters = f"fps={fps:.8f}" + (",scale=640:-2" if coarse else "")
+    cmd += ["-vf", filters, "-q:v", "5" if coarse else "3",
+            "-start_number", "0", str(out / "%06d.jpg")]
     subprocess.run(cmd, check=True)
     return [(start + i / fps, p) for i, p in enumerate(sorted(out.glob("*.jpg")))]
 
@@ -471,11 +489,15 @@ def analyse_video(video: str, out: Path, cfg: dict[str, Any], debug: bool, ocr: 
     detector = VisualDetector(cfg, ocr=ocr)
     with tempfile.TemporaryDirectory(dir=out) as temp:
         update("דוגם תמונות לסריקה מהירה", .08)
-        sampled = extract_frames(video, Path(temp) / "coarse_frames", 1/float(cfg["coarse_interval_seconds"]))
+        sampled = extract_frames(video, Path(temp) / "coarse_frames",
+                                 1/float(cfg["coarse_interval_seconds"]), coarse=True)
         samples: dict[float, tuple[FrameResult, Path]] = {}
         for index, (t, path) in enumerate(sampled):
             with Image.open(path) as frame:
-                result = coarse_detector.score_frame(frame, t, do_ocr=False)
+                # Every fourth frame gets the full position/scale search. The
+                # others use calibrated ROIs; temporal grouping bridges gaps.
+                result = coarse_detector.score_frame(frame, t, do_ocr=False,
+                                                     search=index % 4 == 0)
             samples[round(t, 3)] = result, path
             if index % 10 == 0:
                 update("סורק את הסרטון", .14 + .34 * (index + 1) / max(len(sampled), 1))
