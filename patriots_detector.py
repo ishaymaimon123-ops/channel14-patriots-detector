@@ -399,8 +399,17 @@ def extract_frames(video: str, out: Path, fps: float, start: float = 0,
     filters = f"fps={fps:.8f}" + (",scale=640:-2" if coarse else "")
     cmd += ["-vf", filters, "-q:v", "5" if coarse else "3",
             "-start_number", "0", str(out / "%06d.jpg")]
-    subprocess.run(cmd, check=True)
-    return [(start + i / fps, p) for i, p in enumerate(sorted(out.glob("*.jpg")))]
+    proc = subprocess.run(cmd)
+    paths = sorted(out.glob("*.jpg"))
+    if coarse and (proc.returncode or len(paths) < 3):
+        # Some very short or synthetic videos have almost no keyframes.
+        # Preserve detection by decoding them normally.
+        for path in paths:
+            path.unlink()
+        return extract_frames(video, out, fps, start, end)
+    if proc.returncode:
+        raise subprocess.CalledProcessError(proc.returncode, cmd)
+    return [(start + i / fps, p) for i, p in enumerate(paths)]
 
 
 def content_features(image: Image.Image) -> tuple[np.ndarray, np.ndarray, bool]:
